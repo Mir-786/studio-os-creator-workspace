@@ -1,15 +1,17 @@
 # Studio OS — Creator Workspace
 
-A Notion-inspired workspace starter built with Next.js App Router, React, TypeScript, Tailwind CSS v4, Framer Motion, and Lucide icons.
+A responsive creator workspace for YouTube and Instagram production built with Next.js App Router, React, TypeScript, Tailwind CSS v4, Framer Motion, Lucide React, and optional Supabase cloud sync.
 
-## Included
-- Creator dashboard with project/task/script metrics
-- YouTube and Instagram project boards
-- Video project creation and stage updates
-- Script library and editable script editor (hook, main script, CTA)
-- Content calendar view
-- Idea bank cards that can be turned into projects
-- Responsive sidebar, search, toast notifications, motion, and localStorage persistence
+## Features
+- Creator dashboard
+- YouTube / Instagram video projects and metadata
+- Production board with drag-and-drop stages
+- Reusable script templates and editable script library
+- Shot list and editing checklist
+- Month-based publishing calendar
+- Thumbnail URL preview, source, title, description/caption, and tags
+- Supabase email/password auth and per-user cloud workspace payload
+- Local browser cache for convenience
 
 ## Run locally
 ```bash
@@ -18,10 +20,27 @@ npm run dev
 ```
 Open http://localhost:3000.
 
-## Deploy to Vercel
-1. Push this folder to a GitHub repository.
-2. Import the repository in Vercel.
-3. Keep the framework preset as Next.js and deploy.
+To type-check:
+```bash
+npm run typecheck
+```
+To build:
+```bash
+npm run build
+```
 
-## Important starter limitations
-This version stores data in the current browser via localStorage. It does not yet have accounts, shared team workspaces, cloud persistence, real calendar syncing, uploads, or connected AI generation. For production, add authentication (e.g. Auth.js or Clerk), a database (e.g. Supabase/Postgres), file storage, and a server-side AI route. Never expose an AI API key in client-side code.
+## Enable cross-device sync
+1. Create a project at https://supabase.com/.
+2. Run `supabase/schema.sql` in Supabase Dashboard → SQL Editor.
+3. Copy your Supabase Project URL and anon/public key.
+4. Create `.env.local` from `.env.local.example` and fill in both values.
+5. Add the same environment variables to Vercel Project Settings → Environment Variables.
+6. Redeploy and sign in with the same account on every device.
+
+Never put a Supabase service-role key in browser code or a `NEXT_PUBLIC_*` variable.
+
+## Deployment
+Import this folder's Git repository into Vercel. Framework preset should be Next.js. Set the two Supabase environment variables if cloud sync is desired.
+
+## Important
+The build environment here could not complete a dependency install, so the full project has been packaged with the React drag/drop event types corrected, but it has not been verified by a successful remote Vercel build in this session. If Vercel reports a different error after deploying, use the new build log to identify it.
