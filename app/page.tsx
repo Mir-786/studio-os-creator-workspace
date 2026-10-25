@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getSupabase } from "@/lib/supabase";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Aperture, Search, Plus, ChevronDown, ChevronRight, Home, Inbox, CalendarDays,
@@ -57,17 +58,113 @@ export default function HomePage() {
   const [newTags, setNewTags] = useState("");
   const [toast, setToast] = useState("");
   const [saved, setSaved] = useState(false);
+  const [authSession, setAuthSession] = useState<any>(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [cloudReady, setCloudReady] = useState(false);
+  const [cloudError, setCloudError] = useState("");
+  const supabase = getSupabase();
+
+  useEffect(() => {
+    let alive = true;
+    const loadLocal = () => {
+      try {
+        const p = localStorage.getItem("studio-projects"); if (p) setProjects(JSON.parse(p));
+        const t = localStorage.getItem("studio-tasks"); if (t) setTasks(JSON.parse(t));
+        const s = localStorage.getItem("studio-scripts"); if (s) setScripts(JSON.parse(s));
+      } catch {}
+    };
+    if (!supabase) {
+      loadLocal();
+      setCloudReady(true);
+      setCloudError("Supabase is not configured yet. Add the environment variables to enable cross-device sync.");
+      return () => { alive = false; };
+    }
+    supabase.auth.getSession().then(({ data }) => {
+      if (!alive) return;
+      setAuthSession(data.session);
+      if (!data.session) setCloudReady(true);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!alive) return;
+      setAuthSession(session);
+      if (!session) setCloudReady(true);
+    });
+    return () => { alive = false; listener.subscription.unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadCloud = async () => {
+      if (!supabase || !authSession?.user?.id) return;
+      setCloudReady(false);
+      setCloudError("");
+      const { data, error } = await supabase.from("workspace_data").select("payload").eq("user_id", authSession.user.id).maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setCloudError("Cloud load failed: " + error.message);
+        setCloudReady(true);
+        return;
+      }
+      if (data?.payload) {
+        const payload = data.payload as any;
+        setProjects(Array.isArray(payload.projects) ? payload.projects : starterProjects);
+        setTasks(Array.isArray(payload.tasks) ? payload.tasks : starterTasks);
+        setScripts(Array.isArray(payload.scripts) ? payload.scripts : starterScripts);
+      } else {
+        try {
+          const p = localStorage.getItem("studio-projects"); if (p) setProjects(JSON.parse(p));
+          const t = localStorage.getItem("studio-tasks"); if (t) setTasks(JSON.parse(t));
+          const s = localStorage.getItem("studio-scripts"); if (s) setScripts(JSON.parse(s));
+        } catch {}
+      }
+      setCloudReady(true);
+    };
+    loadCloud();
+    return () => { cancelled = true; };
+  }, [authSession?.user?.id]);
 
   useEffect(() => {
     try {
-      const p = localStorage.getItem("studio-projects"); if (p) setProjects(JSON.parse(p));
-      const t = localStorage.getItem("studio-tasks"); if (t) setTasks(JSON.parse(t));
-      const s = localStorage.getItem("studio-scripts"); if (s) setScripts(JSON.parse(s));
+      localStorage.setItem("studio-projects", JSON.stringify(projects));
+      localStorage.setItem("studio-tasks", JSON.stringify(tasks));
+      localStorage.setItem("studio-scripts", JSON.stringify(scripts));
     } catch {}
-  }, []);
-  useEffect(() => { try { localStorage.setItem("studio-projects", JSON.stringify(projects)); } catch {} }, [projects]);
-  useEffect(() => { try { localStorage.setItem("studio-tasks", JSON.stringify(tasks)); } catch {} }, [tasks]);
-  useEffect(() => { try { localStorage.setItem("studio-scripts", JSON.stringify(scripts)); } catch {} }, [scripts]);
+  }, [projects, tasks, scripts]);
+
+  useEffect(() => {
+    if (!supabase || !authSession?.user?.id || !cloudReady) return;
+    const timer = window.setTimeout(async () => {
+      const payload = { projects, tasks, scripts, updatedAt: new Date().toISOString() };
+      const { error } = await supabase.from("workspace_data").upsert(
+        { user_id: authSession.user.id, payload, updated_at: new Date().toISOString() },
+        { onConflict: "user_id" }
+      );
+      if (error) setCloudError("Cloud sync issue: " + error.message);
+      else setCloudError("");
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [projects, tasks, scripts, authSession?.user?.id, cloudReady]);
+
+  const handleAuth = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!supabase) { setCloudError("Configure Supabase URL and anon key first."); return; }
+    setAuthBusy(true); setCloudError("");
+    const result = authMode === "signup"
+      ? await supabase.auth.signUp({ email: authEmail, password: authPassword })
+      : await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    setAuthBusy(false);
+    if (result.error) setCloudError(result.error.message);
+    else if (authMode === "signup" && !result.data.session) setCloudError("Check your email to confirm your account, then sign in.");
+    else notify(authMode === "signup" ? "Account created" : "Signed in");
+  };
+  const signOut = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setAuthSession(null);
+    notify("Signed out");
+  };
 
   const filteredProjects = useMemo(() => projects.filter(p => `${p.title} ${p.platform} ${p.status}`.toLowerCase().includes(search.toLowerCase())), [projects, search]);
   const doneTasks = tasks.filter(t => t.done).length;
@@ -88,8 +185,28 @@ export default function HomePage() {
     catch { notify("Select and copy your script manually"); }
   };
 
+  if (supabase && !authSession) {
+    return <div className="flex min-h-screen items-center justify-center bg-[#f7f7f5] p-4">
+      <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} className="w-full max-w-md rounded-2xl border border-[#e8e8e2] bg-white p-6 shadow-sm sm:p-8">
+        <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-[#6655d9] text-white"><Aperture size={22}/></div>
+        <div className="text-[11px] font-semibold uppercase tracking-[.15em] text-[#85877f]">Studio OS · Creator workspace</div>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{authMode === "signin" ? "Welcome back" : "Create your workspace account"}</h1>
+        <p className="mt-2 text-[12px] leading-5 text-[#85877f]">Sign in to sync your projects, scripts, tasks, and production details across your phone, tablet, and computer.</p>
+        <form onSubmit={handleAuth} className="mt-6 space-y-3">
+          <label className="block"><span className="mb-1.5 block text-[11px] font-semibold">Email</span><input type="email" required value={authEmail} onChange={e=>setAuthEmail(e.target.value)} autoComplete="email" className="w-full rounded-xl border border-[#e8e8e2] px-3 py-3 text-[12px] outline-none focus:border-[#bdb5ff]" placeholder="you@example.com"/></label>
+          <label className="block"><span className="mb-1.5 block text-[11px] font-semibold">Password</span><input type="password" required minLength={6} value={authPassword} onChange={e=>setAuthPassword(e.target.value)} autoComplete={authMode==="signin"?"current-password":"new-password"} className="w-full rounded-xl border border-[#e8e8e2] px-3 py-3 text-[12px] outline-none focus:border-[#bdb5ff]" placeholder="At least 6 characters"/></label>
+          {cloudError && <div className="rounded-lg bg-[#fff0ed] p-3 text-[11px] leading-5 text-[#b34639]">{cloudError}</div>}
+          <button disabled={authBusy} type="submit" className="w-full rounded-xl bg-[#6655d9] px-4 py-3 text-[12px] font-semibold text-white disabled:opacity-60">{authBusy ? "Please wait…" : authMode === "signin" ? "Sign in and sync" : "Create account"}</button>
+        </form>
+        <button onClick={()=>{setAuthMode(authMode==="signin"?"signup":"signin");setCloudError("");}} className="mt-4 w-full text-[11px] font-medium text-[#6655d9]">{authMode==="signin"?"New here? Create an account":"Already have an account? Sign in"}</button>
+        <p className="mt-5 text-center text-[10px] leading-5 text-[#a0a197]">Your data is private to your account using Supabase Row Level Security.</p>
+      </motion.div>
+    </div>;
+  }
+
   return (
     <div className="min-h-screen">
+      {cloudError && authSession && <div className="fixed bottom-4 right-4 z-[90] max-w-sm rounded-xl border border-[#f0d4b2] bg-[#fff7eb] px-4 py-3 text-[11px] text-[#8a5a1d] shadow-lg">{cloudError}</div>}
       <div className="flex min-h-screen">
         <AnimatePresence>{mobileNav && <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setMobileNav(false)} />}</AnimatePresence>
         <aside className={`${mobileNav ? "translate-x-0" : "-translate-x-full"} fixed z-50 flex h-screen w-[258px] flex-col border-r border-[#e8e8e2] bg-[#fbfbf9] p-3 transition-transform lg:sticky lg:top-0 lg:z-10 lg:translate-x-0`}>
@@ -120,7 +237,7 @@ export default function HomePage() {
         <main className="min-w-0 flex-1">
           <header className="sticky top-0 z-20 flex h-[58px] items-center justify-between border-b border-[#e8e8e2] bg-[#f7f7f5]/90 px-4 backdrop-blur-md sm:px-7">
             <div className="flex items-center gap-2 text-[12px] text-[#85877f]"><button className="lg:hidden" onClick={() => setMobileNav(true)}><Menu size={18}/></button><span>Studio OS</span><ChevronRight size={13}/><span className="font-semibold text-[#353630]">{section}</span></div>
-            <div className="flex items-center gap-2"><div className="hidden items-center gap-1.5 rounded-full bg-[#e4f3e9] px-2.5 py-1.5 text-[10px] font-medium text-[#397751] sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-[#42a86b]"/> All changes saved</div><button onClick={createScript} className="flex items-center gap-1.5 rounded-lg bg-[#6655d9] px-3 py-2 text-[11px] font-semibold text-white shadow-sm transition hover:bg-[#5545c6]"><Plus size={14}/> New script</button></div>
+            <div className="flex items-center gap-2"><div className={`hidden items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-medium sm:flex ${authSession ? "bg-[#e4f3e9] text-[#397751]" : "bg-[#fff0dd] text-[#9b6a20]"}`}><span className={`h-1.5 w-1.5 rounded-full ${authSession ? "bg-[#42a86b]" : "bg-[#d99a35]"}`}/>{authSession ? "Cloud sync enabled" : "Local mode"}</div>{authSession && <button onClick={signOut} title={authSession.user?.email || "Sign out"} className="hidden rounded-lg border border-[#e8e8e2] bg-white px-2.5 py-2 text-[10px] text-[#62645c] sm:block">Sign out</button>}<button onClick={createScript} className="flex items-center gap-1.5 rounded-lg bg-[#6655d9] px-3 py-2 text-[11px] font-semibold text-white shadow-sm transition hover:bg-[#5545c6]"><Plus size={14}/> New script</button></div>
           </header>
 
           <div className="mx-auto max-w-[1400px] px-4 py-7 sm:px-7 lg:px-9">
@@ -144,7 +261,7 @@ export default function HomePage() {
                   <div className="mb-5 flex items-center justify-between"><div><h2 className="text-[16px] font-semibold tracking-tight">Your next moves</h2><p className="mt-1 text-[11px] text-[#85877f]">A little progress every day.</p></div><span className="rounded-full bg-[#f2f1ed] px-2.5 py-1 text-[10px] font-medium">{doneTasks} of {tasks.length}</span></div>
                   <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-[#f0f0ec]"><motion.div initial={{width:0}} animate={{width:`${tasks.length?doneTasks/tasks.length*100:0}%`}} className="h-full rounded-full bg-[#6655d9]"/></div>
                   <div className="space-y-1">{tasks.map(t => <button key={t.id} onClick={() => toggleTask(t.id)} className="flex w-full items-start gap-3 rounded-lg px-1 py-3 text-left hover:bg-[#fafaf8]"><span className={`mt-0.5 ${t.done?"text-[#3b9a65]":"text-[#b7b8b0]"}`}>{t.done?<CheckCircle2 size={17}/>:<Circle size={17}/>}</span><span className="min-w-0 flex-1"><span className={`block text-[12px] ${t.done?"text-[#a1a29b] line-through":"font-medium"}`}>{t.title}</span><span className="mt-1 block truncate text-[10px] text-[#85877f]">{t.project}</span></span><span className="whitespace-nowrap text-[10px] text-[#85877f]">{t.due}</span></button>)}</div>
-                  <button onClick={() => notify("Task manager opened")} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#dcdcd5] py-2.5 text-[11px] font-medium text-[#77796f] hover:border-[#bdb5ff] hover:text-[#6655d9]"><Plus size={13}/> Add a task</button>
+                  <button onClick={() => { const title = window.prompt("What do you need to do?"); if (title?.trim()) { const project = window.prompt("Related project (optional)", "") || "General"; setTasks(prev => [{id:Date.now(),title:title.trim(),project,due:"Today",done:false},...prev]); notify("Task added"); } }} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#dcdcd5] py-2.5 text-[11px] font-medium text-[#77796f] hover:border-[#bdb5ff] hover:text-[#6655d9]"><Plus size={13}/> Add a task</button>
                 </section>
               </div>
               <section className="mt-6 rounded-2xl bg-[#242521] p-5 text-white sm:p-6"><div className="flex flex-col gap-4 md:flex-row md:items-center"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-[#c5bcff]"><Sparkles size={21}/></div><div className="flex-1"><div className="text-[14px] font-semibold">Your next great video starts with one idea.</div><p className="mt-1 text-[11px] leading-5 text-white/60">Open the idea bank, shape the hook, and turn the concept into a production-ready script.</p></div><button onClick={() => setSection("Idea bank")} className="flex w-fit items-center gap-2 rounded-lg bg-white px-3.5 py-2.5 text-[11px] font-semibold text-[#242521] hover:bg-[#eeecff]">Explore idea bank <ArrowUpRight size={14}/></button></div></section>
