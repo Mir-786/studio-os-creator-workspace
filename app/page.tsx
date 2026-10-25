@@ -461,4 +461,5 @@ function Modal({title,subtitle,close,children,wide=false}:{title:string;subtitle
 }
 function ScriptField({label,hint,value,onChange,placeholder}:{label:string;hint:string;value:string;onChange:(v:string)=>void;placeholder:string}) {
   return <label className="block"><span className="block text-[11px] font-semibold">{label}</span><span className="mt-1 block text-[10px] text-[#85877f]">{hint}</span><textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={5} className="mt-2 w-full resize-y rounded-xl border border-[#e8e8e2] bg-white p-3 text-[11px] leading-5 outline-none placeholder:text-[#b4b5ae] focus:border-[#bdb5ff]"/></label>
-}
+ }
+ 
