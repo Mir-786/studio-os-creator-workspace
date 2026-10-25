@@ -10,7 +10,7 @@ import {
   PanelLeftClose, Hash, Send, Settings2, WandSparkles, Copy, Trash2
 } from "lucide-react";
 
-type Project = { id: number; title: string; platform: "YouTube" | "Instagram"; status: string; date: string; color: string; description: string; source: string; thumbnail: string; videoTitle: string; videoDescription: string; tags: string };
+type Project = { id: number; title: string; platform: "YouTube" | "Instagram"; status: string; date: string; publishDate?: string; color: string; description: string; source: string; thumbnail: string; videoTitle: string; videoDescription: string; tags: string };
 type Task = { id: number; title: string; project: string; due: string; done: boolean };
 type Script = { id: number; title: string; platform: string; hook: string; body: string; cta: string };
 
@@ -33,8 +33,9 @@ const starterScripts: Script[] = [
 
 const navItems = [
   { name: "Home", icon: Home }, { name: "Inbox", icon: Inbox, badge: "3" },
-  { name: "Content calendar", icon: CalendarDays }, { name: "Video projects", icon: Clapperboard },
-  { name: "Script library", icon: FileText }, { name: "Idea bank", icon: Lightbulb }
+  { name: "Content calendar", icon: CalendarDays }, { name: "Production board", icon: Clapperboard },
+  { name: "Video projects", icon: Film }, { name: "Script library", icon: FileText },
+  { name: "Shot list", icon: Play }, { name: "Editing checklist", icon: ListChecks }, { name: "Script templates", icon: Copy }, { name: "Idea bank", icon: Lightbulb }
 ];
 const statusColors: Record<string, string> = { Idea: "#8b8d87", Scripting: "#6655d9", Filming: "#e49a45", Editing: "#318a73", Published: "#2f8a53" };
 
@@ -43,6 +44,25 @@ export default function HomePage() {
   const [projects, setProjects] = useState<Project[]>(starterProjects);
   const [tasks, setTasks] = useState<Task[]>(starterTasks);
   const [scripts, setScripts] = useState<Script[]>(starterScripts);
+  const [shotItems, setShotItems] = useState<{id:number;project:string;shot:string;type:string;done:boolean}[]>([
+    {id:101,project:"My creator morning routine",shot:"Wide establishing shot of the workspace",type:"B-roll",done:false},
+    {id:102,project:"My creator morning routine",shot:"Close-up of planning notebook",type:"Close-up",done:false},
+    {id:103,project:"3 editing tricks that feel cinematic",shot:"Before-and-after screen recording",type:"Screen recording",done:true}
+  ]);
+  const [editChecks, setEditChecks] = useState<{id:number;project:string;label:string;done:boolean}[]>([
+    {id:201,project:"General",label:"Remove pauses and mistakes",done:false},
+    {id:202,project:"General",label:"Check captions and spelling",done:false},
+    {id:203,project:"General",label:"Balance voice, music, and effects",done:false},
+    {id:204,project:"General",label:"Check aspect ratio and export settings",done:false},
+    {id:205,project:"General",label:"Watch the final export before publishing",done:false}
+  ]);
+  const [newShot, setNewShot] = useState("");
+  const [newShotProject, setNewShotProject] = useState("");
+  const [newShotType, setNewShotType] = useState("B-roll");
+  const [newCheck, setNewCheck] = useState("");
+  const [newCheckProject, setNewCheckProject] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [search, setSearch] = useState("");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -56,6 +76,7 @@ export default function HomePage() {
   const [newVideoTitle, setNewVideoTitle] = useState("");
   const [newVideoDescription, setNewVideoDescription] = useState("");
   const [newTags, setNewTags] = useState("");
+  const [newPublishDateValue, setNewPublishDateValue] = useState("");
   const [toast, setToast] = useState("");
   const [saved, setSaved] = useState(false);
   const [authSession, setAuthSession] = useState<any>(null);
@@ -74,6 +95,8 @@ export default function HomePage() {
         const p = localStorage.getItem("studio-projects"); if (p) setProjects(JSON.parse(p));
         const t = localStorage.getItem("studio-tasks"); if (t) setTasks(JSON.parse(t));
         const s = localStorage.getItem("studio-scripts"); if (s) setScripts(JSON.parse(s));
+          const sh = localStorage.getItem("studio-shot-items"); if (sh) setShotItems(JSON.parse(sh));
+          const ec = localStorage.getItem("studio-edit-checks"); if (ec) setEditChecks(JSON.parse(ec));
       } catch {}
     };
     if (!supabase) {
@@ -113,11 +136,15 @@ export default function HomePage() {
         setProjects(Array.isArray(payload.projects) ? payload.projects : starterProjects);
         setTasks(Array.isArray(payload.tasks) ? payload.tasks : starterTasks);
         setScripts(Array.isArray(payload.scripts) ? payload.scripts : starterScripts);
+        setShotItems(Array.isArray(payload.shotItems) ? payload.shotItems : []);
+        setEditChecks(Array.isArray(payload.editChecks) ? payload.editChecks : []);
       } else {
         try {
           const p = localStorage.getItem("studio-projects"); if (p) setProjects(JSON.parse(p));
           const t = localStorage.getItem("studio-tasks"); if (t) setTasks(JSON.parse(t));
           const s = localStorage.getItem("studio-scripts"); if (s) setScripts(JSON.parse(s));
+          const sh = localStorage.getItem("studio-shot-items"); if (sh) setShotItems(JSON.parse(sh));
+          const ec = localStorage.getItem("studio-edit-checks"); if (ec) setEditChecks(JSON.parse(ec));
         } catch {}
       }
       setCloudReady(true);
@@ -131,13 +158,15 @@ export default function HomePage() {
       localStorage.setItem("studio-projects", JSON.stringify(projects));
       localStorage.setItem("studio-tasks", JSON.stringify(tasks));
       localStorage.setItem("studio-scripts", JSON.stringify(scripts));
+      localStorage.setItem("studio-shot-items", JSON.stringify(shotItems));
+      localStorage.setItem("studio-edit-checks", JSON.stringify(editChecks));
     } catch {}
-  }, [projects, tasks, scripts]);
+  }, [projects, tasks, scripts, shotItems, editChecks]);
 
   useEffect(() => {
     if (!supabase || !authSession?.user?.id || !cloudReady) return;
     const timer = window.setTimeout(async () => {
-      const payload = { projects, tasks, scripts, updatedAt: new Date().toISOString() };
+      const payload = { projects, tasks, scripts, shotItems, editChecks, updatedAt: new Date().toISOString() };
       const { error } = await supabase.from("workspace_data").upsert(
         { user_id: authSession.user.id, payload, updated_at: new Date().toISOString() },
         { onConflict: "user_id" }
@@ -146,7 +175,7 @@ export default function HomePage() {
       else setCloudError("");
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [projects, tasks, scripts, authSession?.user?.id, cloudReady]);
+  }, [projects, tasks, scripts, shotItems, editChecks, authSession?.user?.id, cloudReady]);
 
   const handleAuth = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -171,8 +200,8 @@ export default function HomePage() {
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2400); };
   const addProject = () => {
     if (!newTitle.trim()) return;
-    const project: Project = { id: Date.now(), title: newTitle.trim(), platform: newPlatform, status: newStatus, date: "No date", color: ["#e9e4ff", "#ffe7d8", "#dff3e8", "#e0efff"][projects.length % 4], description: "Add your brief, references, and production notes.", source: newSource.trim(), thumbnail: newThumbnail.trim(), videoTitle: newVideoTitle.trim() || newTitle.trim(), videoDescription: newVideoDescription.trim(), tags: newTags.trim() };
-    setProjects(prev => [project, ...prev]); setNewTitle(""); setNewSource(""); setNewThumbnail(""); setNewVideoTitle(""); setNewVideoDescription(""); setNewTags(""); setNewProjectOpen(false); setSection("Video projects"); notify("Project created");
+    const project: Project = { id: Date.now(), title: newTitle.trim(), platform: newPlatform, status: newStatus, date: newPublishDateValue ? new Date(newPublishDateValue+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"2-digit"}) : "No date", publishDate: newPublishDateValue || undefined, color: ["#e9e4ff", "#ffe7d8", "#dff3e8", "#e0efff"][projects.length % 4], description: "Add your brief, references, and production notes.", source: newSource.trim(), thumbnail: newThumbnail.trim(), videoTitle: newVideoTitle.trim() || newTitle.trim(), videoDescription: newVideoDescription.trim(), tags: newTags.trim() };
+    setProjects(prev => [project, ...prev]); setNewTitle(""); setNewSource(""); setNewThumbnail(""); setNewVideoTitle(""); setNewVideoDescription(""); setNewTags(""); setNewPublishDateValue(""); setNewProjectOpen(false); setSection("Video projects"); notify("Project created");
   };
   const toggleTask = (id: number) => setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
   const createScript = () => {
@@ -183,6 +212,41 @@ export default function HomePage() {
   const copyScript = async (s: Script) => {
     try { await navigator.clipboard.writeText(`${s.title}\n\nHOOK\n${s.hook}\n\nSCRIPT\n${s.body}\n\nCTA\n${s.cta}`); notify("Script copied to clipboard"); }
     catch { notify("Select and copy your script manually"); }
+  };
+
+  const moveProject = (projectId: number, status: string) => {
+    setProjects(prev => prev.map(p => p.id === projectId ? {...p, status} : p));
+    notify("Project moved to " + status);
+  };
+  const addShot = () => {
+    if (!newShot.trim()) return;
+    setShotItems(prev => [{id:Date.now(),project:newShotProject || projects[0]?.title || "General",shot:newShot.trim(),type:newShotType,done:false}, ...prev]);
+    setNewShot("");
+    notify("Shot added");
+  };
+  const addEditCheck = () => {
+    if (!newCheck.trim()) return;
+    setEditChecks(prev => [...prev,{id:Date.now(),project:newCheckProject || "General",label:newCheck.trim(),done:false}]);
+    setNewCheck("");
+    notify("Checklist item added");
+  };
+  const useTemplate = (kind: string) => {
+    const library: Record<string, Script> = {
+      "YouTube long-form": {id:Date.now(),title:"YouTube Video — New Draft",platform:"YouTube",hook:"[0:00–0:15] Start with a surprising result, question, or promise.",body:"[INTRO] Context and why it matters.\n\n[SECTION 1] First key point + example.\n\n[SECTION 2] Story, demonstration, or proof.\n\n[SECTION 3] Actionable steps.\n\n[OUTRO] Recap and transition.",cta:"If this helped, subscribe and tell me what you want to see next."},
+      "Instagram Reel": {id:Date.now(),title:"Instagram Reel — New Draft",platform:"Instagram",hook:"[0–2s] Pattern interrupt: “Stop scrolling if you want to…”",body:"[2–7s] State the problem.\n[7–20s] Deliver 2–3 quick steps with on-screen examples.\n[20–27s] Show the result.\n[27–30s] End on one clear message.",cta:"Save this Reel and follow for more."},
+      "Tutorial / how-to": {id:Date.now(),title:"Tutorial — New Draft",platform:"YouTube",hook:"By the end of this video, you'll know how to [specific result].",body:"[PREPARATION] Tools and prerequisites.\n\n[STEP 1] Explain and demonstrate.\n[STEP 2] Explain and demonstrate.\n[STEP 3] Common mistake and fix.\n\n[RESULT] Show the finished outcome.",cta:"Try it yourself and leave your question below."},
+      "Product / review": {id:Date.now(),title:"Review — New Draft",platform:"YouTube",hook:"I tested [product/tool] to see if it really solves [problem].",body:"[CONTEXT] Who this is for.\n[WHAT WORKS] Benefits with evidence.\n[WHAT DOESN'T] Limitations and trade-offs.\n[REAL TEST] Demonstration and results.\n[VERDICT] Who should or shouldn't use it.",cta:"Share your experience in the comments."}
+    };
+    const draft = library[kind];
+    setScripts(prev=>[draft,...prev]);
+    setScriptOpen(draft);
+    setSection("Script library");
+    notify("Template added to script library");
+  };
+  const savePublishDate = (project: Project, value: string) => {
+    const updated = {...project, publishDate:value || undefined, date:value ? new Date(value+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"2-digit"}) : "No date"};
+    setSelectedProject(updated);
+    setProjects(prev=>prev.map(p=>p.id===project.id?updated:p));
   };
 
   if (supabase && !authSession) {
@@ -267,11 +331,81 @@ export default function HomePage() {
               <section className="mt-6 rounded-2xl bg-[#242521] p-5 text-white sm:p-6"><div className="flex flex-col gap-4 md:flex-row md:items-center"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-[#c5bcff]"><Sparkles size={21}/></div><div className="flex-1"><div className="text-[14px] font-semibold">Your next great video starts with one idea.</div><p className="mt-1 text-[11px] leading-5 text-white/60">Open the idea bank, shape the hook, and turn the concept into a production-ready script.</p></div><button onClick={() => setSection("Idea bank")} className="flex w-fit items-center gap-2 rounded-lg bg-white px-3.5 py-2.5 text-[11px] font-semibold text-[#242521] hover:bg-[#eeecff]">Explore idea bank <ArrowUpRight size={14}/></button></div></section>
             </>}
 
+            {section === "Production board" && <section>
+              <SectionHeading title="Production board" subtitle="Drag cards between columns on desktop, or use each card’s stage menu on mobile." action={()=>setNewProjectOpen(true)} actionLabel="New project"/>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{["Idea","Scripting","Editing","Published"].map(status=>{
+                const cards=projects.filter(p=>p.status===status || (status==="Idea" && p.status==="Filming"));
+                return <div key={status} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const id=Number(e.dataTransfer.getData("text/project-id"));if(id)moveProject(id,status)}} className="min-h-[240px] rounded-2xl border border-[#e8e8e2] bg-[#f1f1ed] p-3">
+                  <div className="mb-3 flex items-center justify-between px-1"><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{background:statusColors[status]}}/><span className="text-[12px] font-semibold">{status}</span></div><span className="rounded-full bg-white px-2 py-1 text-[10px] text-[#85877f]">{cards.length}</span></div>
+                  <div className="space-y-2">{cards.map(p=><motion.div layout key={p.id} draggable onDragStart={e=>e.dataTransfer.setData("text/project-id",String(p.id))} onClick={()=>setSelectedProject(p)} className="cursor-grab rounded-xl border border-[#e8e8e2] bg-white p-3 shadow-sm active:cursor-grabbing">
+                    {p.thumbnail&&<img src={p.thumbnail} alt="" className="mb-2 max-h-24 w-full rounded-lg object-cover" onError={e=>{e.currentTarget.style.display="none"}}/>}
+                    <div className="mb-2 flex justify-between text-[9px] text-[#85877f]"><span>{p.platform}</span><span>{p.publishDate||p.date}</span></div><div className="text-[12px] font-semibold leading-5">{p.videoTitle||p.title}</div><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-[#85877f]">{p.description}</p>
+                    <div className="mt-3 flex items-center justify-between border-t border-[#eeeeea] pt-2"><button onClick={e=>{e.stopPropagation();setSelectedProject(p)}} className="text-[10px] font-semibold text-[#6655d9]">Details</button><select value={status==="Idea"&&p.status==="Filming"?"Idea":status} onClick={e=>e.stopPropagation()} onChange={e=>moveProject(p.id,e.target.value)} className="max-w-[100px] rounded border border-[#e8e8e2] bg-white px-1 py-1 text-[9px]"><option>Idea</option><option>Scripting</option><option>Editing</option><option>Published</option></select></div>
+                  </motion.div>)}</div><button onClick={()=>{setNewStatus(status);setNewTitle("");setNewProjectOpen(true)}} className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-[#d4d4cc] py-2.5 text-[10px] text-[#85877f] hover:border-[#bdb5ff] hover:text-[#6655d9]"><Plus size={12}/> Add to {status}</button>
+                </div>;
+              })}</div>
+            </section>}
+
+            {section === "Shot list" && <section>
+              <SectionHeading title="Shot list" subtitle="Plan the A-roll, B-roll, close-ups, and screen recordings before filming."/>
+              <div className="panel mb-4 p-4"><div className="grid gap-3 md:grid-cols-[1fr_170px_150px_auto]"><input value={newShot} onChange={e=>setNewShot(e.target.value)} placeholder="Shot description…" className="rounded-xl border border-[#e8e8e2] px-3 py-3 text-[11px] outline-none focus:border-[#bdb5ff]"/><select value={newShotProject} onChange={e=>setNewShotProject(e.target.value)} className="rounded-xl border border-[#e8e8e2] bg-white px-3 py-3 text-[11px]"><option value="">Choose project</option>{projects.map(p=><option key={p.id} value={p.title}>{p.title}</option>)}</select><select value={newShotType} onChange={e=>setNewShotType(e.target.value)} className="rounded-xl border border-[#e8e8e2] bg-white px-3 py-3 text-[11px]"><option>B-roll</option><option>A-roll</option><option>Close-up</option><option>Wide shot</option><option>Screen recording</option><option>Voice-over</option></select><button onClick={addShot} className="rounded-xl bg-[#6655d9] px-4 py-3 text-[11px] font-semibold text-white"><Plus size={13} className="mr-1 inline"/>Add shot</button></div></div>
+              <div className="panel overflow-hidden"><div className="grid grid-cols-[30px_1fr_100px_1fr_60px] gap-2 border-b border-[#e8e8e2] bg-[#fbfbf9] px-4 py-3 text-[10px] font-semibold text-[#85877f]"><span></span><span>Shot</span><span>Type</span><span>Project</span><span></span></div>{shotItems.map(item=><div key={item.id} className="grid grid-cols-[30px_1fr_100px_1fr_60px] items-center gap-2 border-b border-[#eeeeea] px-4 py-3"><button onClick={()=>setShotItems(prev=>prev.map(s=>s.id===item.id?{...s,done:!s.done}:s))} className={item.done?"text-[#319260]":"text-[#b8b8af]"}>{item.done?<CheckCircle2 size={17}/>:<Circle size={17}/>}</button><span className={`text-[11px] ${item.done?"text-[#999a91] line-through":"font-medium"}`}>{item.shot}</span><span className="text-[10px] text-[#85877f]">{item.type}</span><span className="truncate text-[10px] text-[#85877f]">{item.project}</span><button onClick={()=>setShotItems(prev=>prev.filter(s=>s.id!==item.id))} className="text-[10px] text-[#b24b4b]">Remove</button></div>)}{shotItems.length===0&&<div className="p-8 text-center text-[11px] text-[#85877f]">No shots yet. Add your first shot above.</div>}</div>
+            </section>}
+
+            {section === "Editing checklist" && <section>
+              <SectionHeading title="Editing checklist" subtitle="Track quality checks before you export and publish."/>
+              <div className="panel mb-4 p-4"><div className="flex flex-col gap-3 sm:flex-row"><input value={newCheck} onChange={e=>setNewCheck(e.target.value)} placeholder="Add an editing checklist item…" className="min-w-0 flex-1 rounded-xl border border-[#e8e8e2] px-3 py-3 text-[11px] outline-none focus:border-[#bdb5ff]"/><select value={newCheckProject} onChange={e=>setNewCheckProject(e.target.value)} className="rounded-xl border border-[#e8e8e2] bg-white px-3 py-3 text-[11px]"><option value="">Choose project</option>{projects.map(p=><option key={p.id} value={p.title}>{p.title}</option>)}</select><button onClick={addEditCheck} className="rounded-xl bg-[#6655d9] px-4 py-3 text-[11px] font-semibold text-white"><Plus size={13} className="mr-1 inline"/>Add item</button></div></div>
+              <div className="grid gap-4 xl:grid-cols-[1fr_280px]"><div className="panel p-4 sm:p-5"><div className="mb-4 flex items-center justify-between"><h3 className="text-[13px] font-semibold">Pre-publish checklist</h3><span className="text-[10px] text-[#85877f]">{editChecks.filter(c=>c.done).length}/{editChecks.length} complete</span></div><div className="mb-4 h-1.5 overflow-hidden rounded-full bg-[#f0f0ec]"><div className="h-full rounded-full bg-[#3b9a65]" style={{width:`${editChecks.length?editChecks.filter(c=>c.done).length/editChecks.length*100:0}%`}}/></div>{editChecks.map(c=><div key={c.id} className="flex items-center gap-3 rounded-lg px-2 py-3 hover:bg-[#fafaf8]"><button onClick={()=>setEditChecks(prev=>prev.map(x=>x.id===c.id?{...x,done:!x.done}:x))} className={c.done?"text-[#319260]":"text-[#b8b8af]"}>{c.done?<CheckCircle2 size={17}/>:<Circle size={17}/>}</button><span className={`min-w-0 flex-1 text-[11px] ${c.done?"text-[#999a91] line-through":"font-medium"}`}>{c.label}<span className="mt-1 block text-[9px] text-[#85877f]">{c.project}</span></span><button onClick={()=>setEditChecks(prev=>prev.filter(x=>x.id!==c.id))} className="text-[10px] text-[#b24b4b]">×</button></div>)}</div>
+                <div className="rounded-2xl bg-[#242521] p-5 text-white"><div className="flex items-center gap-2 text-[12px] font-semibold"><CheckCircle2 size={16} className="text-[#b9b0ff]"/> Suggested checks</div><p className="mt-2 text-[10px] leading-5 text-white/60">Add a starter checklist to your workspace.</p><div className="mt-4 space-y-2 text-[10px] text-white/85">{["Hook and pacing reviewed","Captions checked","Audio balanced","Thumbnail matches title","Export format checked","Sources and copyright reviewed","Description, tags, links checked","Final export watched"].map(x=><div key={x}>✓ {x}</div>)}</div><button onClick={()=>setEditChecks(prev=>[...prev,...["Hook and pacing reviewed","Captions checked","Audio balanced","Thumbnail matches title","Export format checked","Sources and copyright reviewed","Description, tags, links checked","Final export watched"].map((label,i)=>({id:Date.now()+i,project:"General",label,done:false}))])} className="mt-5 w-full rounded-lg bg-white px-3 py-2.5 text-[10px] font-semibold text-[#242521]">Add suggested checklist</button></div></div>
+            </section>}
+
+            {section === "Script templates" && <section>
+              <SectionHeading title="Reusable script templates" subtitle="Create a fresh editable draft from a proven structure. Your original template stays available for reuse."/>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{[
+                {name:"YouTube long-form",desc:"Story-led structure for 5–15 minute videos.",time:"5–15 min",icon:<Youtube size={19}/>},
+                {name:"Instagram Reel",desc:"Fast hook, quick value, and a save/share CTA.",time:"15–60 sec",icon:<Instagram size={19}/>},
+                {name:"Tutorial / how-to",desc:"Clear steps, screen demos, and final result.",time:"Any length",icon:<ListChecks size={19}/>},
+                {name:"Product / review",desc:"Balanced pros, cons, test, and verdict.",time:"5–12 min",icon:<Film size={19}/>}
+              ].map(t=><div key={t.name} className="panel p-5"><div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-[#eeecff] text-[#6655d9]">{t.icon}</div><h3 className="text-[13px] font-semibold">{t.name}</h3><p className="mt-2 min-h-[40px] text-[10px] leading-5 text-[#85877f]">{t.desc}</p><div className="mt-3 text-[10px] text-[#85877f]">{t.time}</div><button onClick={()=>useTemplate(t.name)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#6655d9] py-2.5 text-[11px] font-semibold text-white"><Plus size={13}/>Use template</button></div>)}</div>
+            </section>}
+
             {section === "Video projects" && <section><SectionHeading title="Video projects" subtitle="Every video, from the first rough idea to the final export." action={() => setNewProjectOpen(true)} actionLabel="New project"/><div className="mb-5 flex flex-col gap-3 sm:flex-row"><div className="relative flex-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9a9b93]"/><input id="workspace-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search projects, platforms, status…" className="w-full rounded-xl border border-[#e8e8e2] bg-white py-3 pl-9 pr-3 text-[12px] outline-none focus:border-[#bdb5ff]"/></div><select value={newStatus} onChange={e=>setNewStatus(e.target.value)} className="rounded-xl border border-[#e8e8e2] bg-white px-3 py-3 text-[12px] outline-none"><option>Idea</option><option>Scripting</option><option>Editing</option><option>Published</option></select></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredProjects.map(p=><button key={p.id} onClick={()=>setSelectedProject(p)} className="panel group p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md"><div className="mb-5 flex items-start justify-between"><div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl" style={{background:p.color}}>{p.thumbnail ? <img src={p.thumbnail} alt="" className="h-full w-full object-cover"/> : p.platform==="YouTube"?<Youtube size={20} className="text-[#d94c43]"/>:<Instagram size={20} className="text-[#b84e88]"/>}</div><span className="rounded-full px-2.5 py-1 text-[10px] font-medium" style={{background:`${statusColors[p.status]||"#888"}18`,color:statusColors[p.status]||"#888"}}>{p.status}</span></div><h3 className="text-[14px] font-semibold">{p.title}</h3><p className="mt-2 line-clamp-2 text-[11px] leading-5 text-[#85877f]">{p.description}</p><div className="mt-5 flex items-center justify-between border-t border-[#eeeeea] pt-4 text-[10px] text-[#85877f]"><span>{p.platform}</span><span className="flex items-center gap-1"><Clock3 size={12}/> {p.date}</span></div></button>)}</div>{filteredProjects.length===0&&<EmptyState title="No projects found" body="Try another search or create a new project." action={()=>setNewProjectOpen(true)}/>}</section>}
 
             {section === "Script library" && <section><SectionHeading title="Script library" subtitle="Hooks, talking points, voice-over drafts, and calls to action." action={createScript} actionLabel="New script"/><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{scripts.map(s=><div key={s.id} className="panel p-5"><div className="mb-4 flex items-center justify-between"><span className="rounded-lg bg-[#f0effb] px-2.5 py-1.5 text-[10px] font-semibold text-[#6655d9]">{s.platform}</span><button onClick={()=>copyScript(s)} className="rounded-lg p-2 text-[#85877f] hover:bg-[#f5f5f1]" title="Copy script"><Copy size={14}/></button></div><h3 className="text-[14px] font-semibold">{s.title}</h3><p className="mt-2 line-clamp-3 text-[11px] leading-5 text-[#85877f]">{s.hook || "Your opening hook goes here. Give the viewer a reason to keep watching."}</p><div className="mt-5 flex gap-2"><button onClick={()=>setScriptOpen(s)} className="flex-1 rounded-lg bg-[#242521] py-2.5 text-[11px] font-semibold text-white hover:bg-black">Open script</button><button onClick={()=>{setScripts(prev=>prev.filter(x=>x.id!==s.id));notify("Script deleted");}} className="rounded-lg border border-[#e8e8e2] px-3 text-[#85877f] hover:text-red-500"><Trash2 size={14}/></button></div></div>)}</div>{scripts.length===0&&<EmptyState title="Your script library is empty" body="Create your first script and keep every draft in one place." action={createScript}/>}</section>}
 
-            {section === "Content calendar" && <section><SectionHeading title="Content calendar" subtitle="A lightweight view of what's coming up next." action={()=>setNewProjectOpen(true)} actionLabel="Schedule content"/><div className="panel overflow-hidden"><div className="grid grid-cols-7 border-b border-[#e8e8e2] bg-[#fbfbf9]">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div key={d} className="border-r border-[#e8e8e2] px-1 py-3 text-center text-[10px] font-semibold text-[#85877f] last:border-r-0 sm:px-3">{d}</div>)}</div><div className="grid grid-cols-7">{Array.from({length:35},(_,i)=>{const day=i-5;const valid=day>=1&&day<=30;const events=projects.filter(p=>p.date.startsWith(["Oct","Nov"].includes(p.date.split(" ")[0])?p.date.split(" ")[1]:"-"));return <div key={i} className="min-h-[90px] border-b border-r border-[#eeeeea] p-1.5 last:border-r-0 sm:min-h-[115px] sm:p-2"><div className={`mb-2 text-[10px] ${day===25?"flex h-5 w-5 items-center justify-center rounded-full bg-[#6655d9] font-bold text-white":"text-[#85877f]"}`}>{valid?day:""}</div>{valid&&projects.filter(p=>p.date===`Oct ${day}`||p.date===`Nov ${day}`).slice(0,2).map(p=><button key={p.id} onClick={()=>setSelectedProject(p)} className="mb-1 block w-full truncate rounded-md px-1 py-1 text-left text-[9px] font-medium sm:px-1.5 sm:text-[10px]" style={{background:p.color}}>{p.title}</button>)}</div>})}</div></div><p className="mt-3 text-[10px] text-[#85877f]">Tip: assign a due date to each project to make your publishing rhythm visible.</p></section>}
+            {section === "Content calendar" && <section>
+              <SectionHeading title="Publishing calendar" subtitle="Plan and review scheduled YouTube videos and Instagram Reels by month." action={()=>{setNewPublishDateValue(new Date(calendarYear,calendarMonth,1).toISOString().slice(0,10));setNewProjectOpen(true);}} actionLabel="Schedule content"/>
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div><div className="text-[19px] font-semibold tracking-tight">{new Date(calendarYear,calendarMonth,1).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</div><p className="mt-1 text-[10px] text-[#85877f]">Click a scheduled video to edit it. Use a date cell to schedule a new post.</p></div>
+                <div className="flex gap-2"><button onClick={()=>{const d=new Date(calendarYear,calendarMonth-1,1);setCalendarMonth(d.getMonth());setCalendarYear(d.getFullYear());}} className="rounded-lg border border-[#e8e8e2] bg-white px-3 py-2 text-[11px] font-semibold hover:bg-[#f4f3ef]">← Previous</button><button onClick={()=>{const d=new Date();setCalendarMonth(d.getMonth());setCalendarYear(d.getFullYear());}} className="rounded-lg border border-[#e8e8e2] bg-white px-3 py-2 text-[11px] font-semibold hover:bg-[#f4f3ef]">Today</button><button onClick={()=>{const d=new Date(calendarYear,calendarMonth+1,1);setCalendarMonth(d.getMonth());setCalendarYear(d.getFullYear());}} className="rounded-lg border border-[#e8e8e2] bg-white px-3 py-2 text-[11px] font-semibold hover:bg-[#f4f3ef]">Next →</button></div>
+              </div>
+              <div className="mb-4 flex flex-wrap gap-2 text-[10px]"><span className="rounded-full bg-[#eeecff] px-2.5 py-1 text-[#5141bf]">YouTube</span><span className="rounded-full bg-[#ffe7e3] px-2.5 py-1 text-[#b84941]">Instagram</span><span className="rounded-full bg-[#e3f4e9] px-2.5 py-1 text-[#397751]">Published</span></div>
+              <div className="panel overflow-hidden">
+                <div className="grid grid-cols-7 border-b border-[#e8e8e2] bg-[#fbfbf9]">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div key={d} className="border-r border-[#e8e8e2] px-1 py-3 text-center text-[10px] font-semibold text-[#85877f] last:border-r-0 sm:px-3">{d}</div>)}</div>
+                <div className="grid grid-cols-7">
+                  {Array.from({length:Math.ceil((new Date(calendarYear,calendarMonth,1).getDay()+new Date(calendarYear,calendarMonth+1,0).getDate())/7)*7},(_,i)=>{
+                    const firstDay=new Date(calendarYear,calendarMonth,1).getDay();
+                    const day=i-firstDay+1;
+                    const daysInMonth=new Date(calendarYear,calendarMonth+1,0).getDate();
+                    const valid=day>=1&&day<=daysInMonth;
+                    const dateKey=valid?`${calendarYear}-${String(calendarMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`:"";
+                    const dayProjects=valid?projects.filter(p=>(p.publishDate||"")===dateKey):[];
+                    const today=new Date();
+                    const isToday=valid&&today.getFullYear()===calendarYear&&today.getMonth()===calendarMonth&&today.getDate()===day;
+                    return <div key={i} className="group min-h-[105px] border-b border-r border-[#eeeeea] p-1.5 last:border-r-0 sm:min-h-[135px] sm:p-2">
+                      <div className="mb-1.5 flex items-center justify-between"><span className={`text-[10px] ${isToday?"flex h-5 w-5 items-center justify-center rounded-full bg-[#6655d9] font-bold text-white":"text-[#85877f]"}`}>{valid?day:""}</span>{valid&&<button title="Schedule content for this date" onClick={()=>{setNewPublishDateValue(dateKey);setNewTitle("");setNewProjectOpen(true);}} className="rounded p-0.5 text-[#b2b3ab] opacity-0 hover:bg-[#eeecff] hover:text-[#6655d9] group-hover:opacity-100"><Plus size={12}/></button>}</div>
+                      {dayProjects.map(p=><button key={p.id} onClick={()=>setSelectedProject(p)} className="mb-1 block w-full rounded-md px-1.5 py-1.5 text-left text-[9px] leading-3 sm:text-[10px]" style={{background:p.platform==="YouTube"?"#eeecff":"#ffe7e3",color:p.platform==="YouTube"?"#5141bf":"#b84941"}}><span className="mb-0.5 block truncate font-semibold">{p.platform==="YouTube"?"▶":"◎"} {p.videoTitle||p.title}</span><span className="block truncate opacity-75">{p.status}</span></button>)}
+                      {valid&&dayProjects.length===0&&<button onClick={()=>{setNewPublishDateValue(dateKey);setNewTitle("");setNewProjectOpen(true);}} className="mt-1 w-full rounded-md border border-dashed border-transparent py-1 text-[9px] text-transparent hover:border-[#d7d2ff] hover:text-[#85877f] group-hover:text-[#b7b8b0]">+ Schedule</button>}
+                    </div>;
+                  })}
+                </div>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="panel p-4"><div className="text-[10px] text-[#85877f]">Scheduled this month</div><div className="mt-1 text-[24px] font-semibold">{projects.filter(p=>p.publishDate&&p.publishDate.startsWith(`${calendarYear}-${String(calendarMonth+1).padStart(2,"0")}`)).length}</div></div>
+                <div className="panel p-4"><div className="text-[10px] text-[#85877f]">YouTube videos</div><div className="mt-1 text-[24px] font-semibold">{projects.filter(p=>p.platform==="YouTube"&&p.publishDate&&p.publishDate.startsWith(`${calendarYear}-${String(calendarMonth+1).padStart(2,"0")}`)).length}</div></div>
+                <div className="panel p-4"><div className="text-[10px] text-[#85877f]">Instagram posts</div><div className="mt-1 text-[24px] font-semibold">{projects.filter(p=>p.platform==="Instagram"&&p.publishDate&&p.publishDate.startsWith(`${calendarYear}-${String(calendarMonth+1).padStart(2,"0")}`)).length}</div></div>
+              </div>
+            </section>}
 
             {section === "Idea bank" && <section><SectionHeading title="Idea bank" subtitle="Capture sparks before they disappear. Turn the best ones into projects." action={()=>setNewProjectOpen(true)} actionLabel="Develop an idea"/><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{[{tag:"Storytelling",title:"The advice I wish I heard earlier",body:"Personal story + 3 lessons. Great for a reflective YouTube video."},{tag:"Creator tips",title:"Make your phone footage look expensive",body:"Lighting, composition, movement. Show each tip with a quick before-and-after."},{tag:"Behind the scenes",title:"A realistic week as a small creator",body:"Show planning, filming, editing, and what did not go to plan."},{tag:"Instagram Reel",title:"3 hooks that stop the scroll",body:"Demonstrate a question hook, a bold claim, and a curiosity gap."},{tag:"Educational",title:"Explain a complex idea in 60 seconds",body:"Choose one topic and explain it with a visual analogy."},{tag:"Community",title:"Answer the question people ask you most",body:"Turn a recurring comment or DM into a helpful video."}].map((idea,i)=><div key={idea.title} className="panel p-5"><div className="mb-4 flex items-center gap-2 text-[#6655d9]"><Lightbulb size={17}/><span className="text-[10px] font-semibold uppercase tracking-wide">{idea.tag}</span></div><h3 className="text-[14px] font-semibold">{idea.title}</h3><p className="mt-2 min-h-[42px] text-[11px] leading-5 text-[#85877f]">{idea.body}</p><button onClick={()=>{setNewTitle(idea.title);setNewProjectOpen(true);}} className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-[#6655d9]">Turn into project <ArrowUpRight size={13}/></button></div>)}</div></section>}
 
@@ -290,11 +424,12 @@ export default function HomePage() {
 <label className="block"><span className="mb-1.5 block text-[11px] font-semibold">Thumbnail image URL</span><input value={newThumbnail} onChange={e=>setNewThumbnail(e.target.value)} placeholder="https://… (optional)" className="w-full rounded-xl border border-[#e8e8e2] px-3 py-3 text-[12px] outline-none focus:border-[#bdb5ff]"/>{newThumbnail && <img src={newThumbnail} alt="Thumbnail preview" className="mt-2 max-h-36 rounded-lg border border-[#e8e8e2] object-cover"/>}</label>
 <label className="block"><span className="mb-1.5 block text-[11px] font-semibold">Video title</span><input value={newVideoTitle} onChange={e=>setNewVideoTitle(e.target.value)} placeholder="Final title viewers will see" className="w-full rounded-xl border border-[#e8e8e2] px-3 py-3 text-[12px] outline-none focus:border-[#bdb5ff]"/></label>
 <label className="block"><span className="mb-1.5 block text-[11px] font-semibold">Description / caption</span><textarea value={newVideoDescription} onChange={e=>setNewVideoDescription(e.target.value)} rows={3} placeholder="Video description, Instagram caption, links, credits, hashtags…" className="w-full resize-y rounded-xl border border-[#e8e8e2] px-3 py-3 text-[12px] leading-5 outline-none focus:border-[#bdb5ff]"/></label>
+<label className="block"><span className="mb-1.5 block text-[11px] font-semibold">Scheduled publish date (optional)</span><input type="date" value={newPublishDateValue} onChange={e=>setNewPublishDateValue(e.target.value)} className="w-full rounded-xl border border-[#e8e8e2] px-3 py-2.5 text-[11px] outline-none focus:border-[#bdb5ff]"/></label>
 <label className="block"><span className="mb-1.5 block text-[11px] font-semibold">Tags / keywords</span><input value={newTags} onChange={e=>setNewTags(e.target.value)} placeholder="video editing, creator tips, tutorial (comma separated)" className="w-full rounded-xl border border-[#e8e8e2] px-3 py-3 text-[12px] outline-none focus:border-[#bdb5ff]"/></label>
 <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={()=>setNewProjectOpen(false)} className="rounded-lg border border-[#e8e8e2] px-4 py-2.5 text-[11px] font-semibold">Cancel</button><button type="submit" className="rounded-lg bg-[#6655d9] px-4 py-2.5 text-[11px] font-semibold text-white">Create project</button></div>
 </form></Modal>}</AnimatePresence>
 
-      <AnimatePresence>{selectedProject && <Modal title={selectedProject.title} subtitle={`${selectedProject.platform} · ${selectedProject.status}`} close={()=>setSelectedProject(null)}><div className="space-y-4"><div className="rounded-xl p-4" style={{background:selectedProject.color}}><div className="text-[10px] font-semibold uppercase tracking-wide opacity-70">Creative brief</div><p className="mt-2 text-[12px] leading-6">{selectedProject.description}</p></div><div className="grid gap-3 sm:grid-cols-2">
+      <AnimatePresence>{selectedProject && <Modal title={selectedProject.title} subtitle={`${selectedProject.platform} · ${selectedProject.status}`} close={()=>setSelectedProject(null)}><div className="space-y-4"><div className="rounded-xl p-4" style={{background:selectedProject.color}}><div className="text-[10px] font-semibold uppercase tracking-wide opacity-70">Creative brief</div><p className="mt-2 text-[12px] leading-6">{selectedProject.description}</p></div><label className="mt-4 block"><span className="mb-1.5 block text-[11px] font-semibold">Scheduled publish date</span><input type="date" value={selectedProject.publishDate||""} onChange={e=>savePublishDate(selectedProject,e.target.value)} className="w-full rounded-xl border border-[#e8e8e2] px-3 py-2.5 text-[11px] outline-none focus:border-[#bdb5ff]"/></label><div className="grid gap-3 sm:grid-cols-2">
 <label className="block"><span className="mb-1.5 block text-[11px] font-semibold">Video title</span><input value={selectedProject.videoTitle} onChange={e=>{const next={...selectedProject,videoTitle:e.target.value};setSelectedProject(next);setProjects(prev=>prev.map(p=>p.id===next.id?next:p));}} placeholder="Final title for publishing" className="w-full rounded-xl border border-[#e8e8e2] px-3 py-2.5 text-[11px] outline-none focus:border-[#bdb5ff]"/></label>
 <label className="block"><span className="mb-1.5 block text-[11px] font-semibold">Source / reference</span><input value={selectedProject.source} onChange={e=>{const next={...selectedProject,source:e.target.value};setSelectedProject(next);setProjects(prev=>prev.map(p=>p.id===next.id?next:p));}} placeholder="URL, research source, or inspiration" className="w-full rounded-xl border border-[#e8e8e2] px-3 py-2.5 text-[11px] outline-none focus:border-[#bdb5ff]"/></label>
 <label className="block sm:col-span-2"><span className="mb-1.5 block text-[11px] font-semibold">Thumbnail image URL</span><input value={selectedProject.thumbnail} onChange={e=>{const next={...selectedProject,thumbnail:e.target.value};setSelectedProject(next);setProjects(prev=>prev.map(p=>p.id===next.id?next:p));}} placeholder="https://example.com/thumbnail.jpg" className="w-full rounded-xl border border-[#e8e8e2] px-3 py-2.5 text-[11px] outline-none focus:border-[#bdb5ff]"/>{selectedProject.thumbnail && <img src={selectedProject.thumbnail} alt="Thumbnail preview" className="mt-2 max-h-36 rounded-lg border border-[#e8e8e2] object-cover"/>}</label>
